@@ -63,7 +63,8 @@ def main():
         # Blend the heatmap over the study material where heatmap data exists
         gray_heatmap = cv2.cvtColor(heatmap_layer, cv2.COLOR_BGR2GRAY)
         mask = gray_heatmap > 0
-        display_canvas[mask] = cv2.addWeighted(display_canvas[mask], 0.5, heatmap_layer[mask], 0.5, 0)
+        if mask.any():
+            display_canvas[mask] = cv2.addWeighted(display_canvas[mask], 0.5, heatmap_layer[mask], 0.5, 0)
 
         # Display HUD info
         cv2.putText(display_canvas, f"Emotion: {current_emotion}", (20, 40), 
