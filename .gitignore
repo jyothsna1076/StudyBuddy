@@ -1,0 +1,22 @@
+# 1. Virtual Environments (CRITICAL)
+# This folder is massive and only meant for your specific local machine.
+studyenv/
+
+# 2. Python Cache Files
+# Python generates these automatically to speed up execution.
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 3. Deep Learning / Model Weights (Just in case)
+# DeepFace downloads heavy weights. If they ever end up in your local folder, this prevents them from uploading.
+.deepface/
+*.h5
+*.pb
+*.weights
+
+# 4. OS and IDE specific files
+# Prevents Windows/Mac junk files or VS Code settings from cluttering the repo.
+.vscode/
+.DS_Store
+Thumbs.db
