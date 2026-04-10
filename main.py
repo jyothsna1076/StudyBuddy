@@ -19,8 +19,13 @@ def main():
     gaze_tracker = GazeTracker()
     emotion_detector = EmotionDetector()
     heatmap_gen = HeatmapGenerator(study_w, study_h)
-
     print("StudyBuddy initialized. Press 'q' to quit.")
+    print("Starting Calibration. Please keep your head still.")
+    gaze_tracker.calibrate(cap, study_w, study_h)
+    
+    # 3. MAIN TRACKING LOOP
+    print("Calibration finished. Starting tracking...")
+    
     
     frame_count = 0
     is_struggling = False
