@@ -1,0 +1,9 @@
+FINAL STUDY SESSION REPORT
+==========================
+Total Study Time: 0.38 minutes
+Overall Efficiency: 41.7%
+
+Detailed Breakdown:
+- Stressed (hand on head/eyes): 0.17 mins (44.4%)
+- Focused: 0.16 mins (41.7%)
+- Confused (vertical lines): 0.05 mins (13.7%)
