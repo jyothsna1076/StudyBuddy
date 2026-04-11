@@ -135,11 +135,18 @@ def main():
                 view_frame = full_doc[scroll_y : scroll_y + VIEW_H, 0 : DOC_W].copy()
                 
                 # 2. Update Heatmap logic
+               # --- UPDATE HEATMAP ---
                 if str(struggle_level).lower() == "high":
-                    heatmap.add_struggle_point(mx, abs_doc_y, mode=track_mode)
+                    # NEW: Pass scroll_y and VIEW_H to ensure only the visible page turns red
+                    intensity_val = 1.0 if track_mode == "cursor" else 0.5
+                    heatmap.add_struggle_point(
+                        mx, 
+                        abs_doc_y, 
+                        mode=track_mode, 
+                        scroll_y=scroll_y, 
+                        view_h=VIEW_H
+                    )
                     color = (0, 0, 255) # Red
-                else:
-                    color = (0, 255, 0) # Green
 
                 # 3. Apply Heatmap Overlay
                 full_heatmap = heatmap.get_heatmap_overlay()
