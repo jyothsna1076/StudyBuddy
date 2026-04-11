@@ -1,90 +1,91 @@
 import cv2
-import numpy as np
-import time
 from gaze_tracker import GazeTracker
 from emotion_detector import EmotionDetector
 from heatmap_generator import HeatmapGenerator
+from calibration import CalibrationManager
+
+def draw_ui(canvas, state, level, color):
+    cv2.putText(canvas, f"State: {state}", (20, 40),
+                cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+
+    cv2.putText(canvas, f"Struggle: {level}", (20, 80),
+                cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+
 
 def main():
-    # 1. Load the study material (Ensure you have an image in the assets folder!)
-    study_material = cv2.imread('assets/study_material.jpg')
+    study_material = cv2.imread('assets/study_material.png')
     if study_material is None:
-        print("Error: Could not load assets/study_material.jpg. Please add an image.")
+        print("Missing study material")
         return
-        
-    study_h, study_w = study_material.shape[:2]
 
-    # 2. Initialize AI Modules
+    h, w = study_material.shape[:2]
+
     cap = cv2.VideoCapture(0)
+
     gaze_tracker = GazeTracker()
     emotion_detector = EmotionDetector()
-    heatmap_gen = HeatmapGenerator(study_w, study_h)
-    print("StudyBuddy initialized. Press 'q' to quit.")
-    print("Starting Calibration. Please keep your head still.")
-    gaze_tracker.calibrate(cap, study_w, study_h)
-    
-    # 3. MAIN TRACKING LOOP
-    print("Calibration finished. Starting tracking...")
-    
-    
+    heatmap = HeatmapGenerator(w, h)
+
+    # NEW CLEAN CALIBRATION
+    calibrator = CalibrationManager(gaze_tracker, emotion_detector)
+    calibrator.run_full_calibration(cap, w, h)
+
+    print("System Ready. Press Q to quit.")
+
     frame_count = 0
-    is_struggling = False
-    current_emotion = "neutral"
 
     while cap.isOpened():
-        success, frame = cap.read()
-        if not success:
+        ret, frame = cap.read()
+        if not ret:
             break
 
-        # Display the webcam feed in a small window
-        cv2.imshow('Webcam (You)', cv2.flip(frame, 1))
+        cv2.imshow("Webcam", cv2.flip(frame, 1))
 
-        # We only run Emotion Detection every 10 frames to prevent severe lag
+        # Emotion (optimized)
         if frame_count % 10 == 0:
-            is_struggling, current_emotion = emotion_detector.get_struggle_index(frame)
-        
+            struggle_level, state = emotion_detector.get_struggle_index(frame)
+
         frame_count += 1
 
-        # Track Gaze relative to the dimensions of the study material
-        gaze_coords = gaze_tracker.get_gaze_coordinates(frame, study_w, study_h)
+        gaze = gaze_tracker.get_gaze_coordinates(frame, w, h)
+        canvas = study_material.copy()
 
-        # Output canvas starts as a fresh copy of the study material
-        display_canvas = study_material.copy()
+        if gaze:
+            x, y = gaze
 
-        if gaze_coords:
-            g_x, g_y = gaze_coords
-            
-            # If the user is struggling, add to the heatmap
-            if is_struggling:
-                heatmap_gen.add_struggle_point(g_x, g_y)
-                
-            # Draw a circle showing where the system THINKS you are looking
-            color = (0, 0, 255) if is_struggling else (0, 255, 0) # Red if struggling, Green if okay
-            cv2.circle(display_canvas, (g_x, g_y), 15, color, -1)
+            if struggle_level == "high":
+                heatmap.add_struggle_point(x, y)
+                color = (0, 0, 255)
+            else:
+                color = (0, 255, 0)
 
-        # Generate and overlay the heatmap
-        heatmap_layer = heatmap_gen.get_heatmap_overlay()
-        
-        # Blend the heatmap over the study material where heatmap data exists
-        gray_heatmap = cv2.cvtColor(heatmap_layer, cv2.COLOR_BGR2GRAY)
-        mask = gray_heatmap > 0
-        if mask.any():
-            display_canvas[mask] = cv2.addWeighted(display_canvas[mask], 0.5, heatmap_layer[mask], 0.5, 0)
+            cv2.circle(canvas, (x, y), 15, color, -1)
 
-        # Display HUD info
-        cv2.putText(display_canvas, f"Emotion: {current_emotion}", (20, 40), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-        cv2.putText(display_canvas, f"Struggle Index: {'HIGH' if is_struggling else 'LOW'}", (20, 80), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255) if is_struggling else (0, 255, 0), 2)
+        # Heatmap overlay
+        overlay = heatmap.get_heatmap_overlay()
 
-        # Show the main Study Material interface
-        cv2.imshow('StudyBuddy - Material View', display_canvas)
+        if overlay is not None:
+            gray = cv2.cvtColor(overlay, cv2.COLOR_BGR2GRAY)
+            mask = gray > 0
+
+            if mask.any():
+                canvas[mask] = cv2.addWeighted(
+                    canvas[mask], 0.5,
+                    overlay[mask], 0.5,
+                    0
+                )
+
+        # UI (clean)
+        draw_ui(canvas, state, struggle_level.upper(), color)
+
+        cv2.imshow("StudyBuddy", canvas)
 
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
     cap.release()
     cv2.destroyAllWindows()
+
 
 if __name__ == "__main__":
     main()

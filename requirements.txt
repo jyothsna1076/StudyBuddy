@@ -1,5 +1,9 @@
-opencv-python
-mediapipe
+numpy==1.24.3
+protobuf==3.20.3
+tensorflow==2.13.0
+mediapipe==0.10.9
+opencv-python==4.7.0.72
+opencv-contrib-python==4.7.0.72
+pandas==1.5.3
+typing-extensions==4.5.0
 deepface
-numpy
-tf-keras

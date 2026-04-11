@@ -100,6 +100,15 @@ class CalibrationManager:
 
         self.gaze_tracker.center_rel_x = results_map["CENTER"][0]
         self.gaze_tracker.center_rel_y = results_map["CENTER"][1]
+        gt = self.gaze_tracker
+
+        gt.center_rel_x = results_map["CENTER"][0]
+        gt.center_rel_y = results_map["CENTER"][1]
+
+        gt.range_x_left = abs(results_map["CENTER"][0] - results_map["TOP_LEFT"][0])
+        gt.range_x_right = abs(results_map["TOP_RIGHT"][0] - results_map["CENTER"][0])
+        gt.range_y_top = abs(results_map["CENTER"][1] - results_map["TOP_LEFT"][1])
+        gt.range_y_bottom = abs(results_map["BOTTOM_LEFT"][1] - results_map["CENTER"][1])
 
         cv2.destroyWindow("Calibration")
         print("Gaze Calibration Complete!")

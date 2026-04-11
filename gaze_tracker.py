@@ -1,110 +1,89 @@
 import mediapipe as mp
 import cv2
 import numpy as np
-import time
+
+
 class GazeTracker:
     def __init__(self):
-        self.calib_left = 0.0
-        self.calib_right = 1.0
-        self.calib_top = 0.0
-        self.calib_bottom = 1.0
+        # Smoothing
+        self.prev_x, self.prev_y = 0, 0
+        self.smoothing = 0.2  # adjustable
+
+        # Calibration values (will be set externally)
+        self.center_rel_x = 0.0
+        self.center_rel_y = 0.0
+
+        self.range_x_left = 1e-6
+        self.range_x_right = 1e-6
+        self.range_y_top = 1e-6
+        self.range_y_bottom = 1e-6
+
+        # MediaPipe
         self.mp_face_mesh = mp.solutions.face_mesh
         self.face_mesh = self.mp_face_mesh.FaceMesh(
             max_num_faces=1,
-            refine_landmarks=True, # Need this for irises
-            min_detection_confidence=0.5,
-            min_tracking_confidence=0.5
+            refine_landmarks=True,
+            min_detection_confidence=0.6,
+            min_tracking_confidence=0.6
         )
-  
-    def calibrate(self, cap, screen_w, screen_h):
-        # Corners to calibrate: (Screen X, Screen Y, Label)
-        corners = [
-            (int(screen_w * 0.1), int(screen_h * 0.1), "TOP_LEFT"),
-            (int(screen_w * 0.9), int(screen_h * 0.1), "TOP_RIGHT"),
-            (int(screen_w * 0.1), int(screen_h * 0.9), "BOTTOM_LEFT"),
-            (int(screen_w * 0.9), int(screen_h * 0.9), "BOTTOM_RIGHT")
-        ]
-        
-        calib_data = {"x": [], "y": []}
-        results_map = {}
 
-        for (sx, sy, name) in corners:
-            print(f"Look at the dot at {name}...")
-            samples_x = []
-            samples_y = []
-            
-            # Give user time to move eyes to the dot
-            start_time = time.time()
-            while len(samples_x) < 20: # Collect 20 stable frames
-                ret, frame = cap.read()
-                if not ret: break
-                
-                # 1. Draw the calibration dot on the frame (or a UI window)
-                cv2.circle(frame, (sx // 2, sy // 2), 10, (0, 0, 255), -1) # Adjust scale if frame != screen
-                cv2.putText(frame, f"Stare at the RED DOT: {name}", (50, 50), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-                cv2.imshow("Calibration", frame)
-                cv2.waitKey(1)
+    # ---------------- CORE FEATURE ---------------- #
+    def _get_eye_relative_pos(self, landmarks):
+        iris_x = (landmarks[468].x + landmarks[473].x) / 2
+        iris_y = (landmarks[468].y + landmarks[473].y) / 2
 
-                # 2. Extract iris data (Raw normalized values)
-                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                res = self.face_mesh.process(rgb_frame)
-                
-                if res.multi_face_landmarks:
-                    landmarks = res.multi_face_landmarks[0].landmark
-                    # Only start collecting after 1 second to let eyes settle
-                    if time.time() - start_time > 1.0:
-                        gx = (landmarks[468].x + landmarks[473].x) / 2
-                        gy = (landmarks[468].y + landmarks[473].y) / 2
-                        samples_x.append(gx)
-                        samples_y.append(gy)
-            
-            # Average the samples for this corner
-            results_map[name] = (np.mean(samples_x), np.mean(samples_y))
+        anchor_x = landmarks[6].x
+        anchor_y = landmarks[6].y
 
-        # Define the boundaries based on averaged samples
-        self.calib_left = (results_map["TOP_LEFT"][0] + results_map["BOTTOM_LEFT"][0]) / 2
-        self.calib_right = (results_map["TOP_RIGHT"][0] + results_map["BOTTOM_RIGHT"][0]) / 2
-        self.calib_top = (results_map["TOP_LEFT"][1] + results_map["TOP_RIGHT"][1]) / 2
-        self.calib_bottom = (results_map["BOTTOM_LEFT"][1] + results_map["BOTTOM_RIGHT"][1]) / 2
-        
-        cv2.destroyWindow("Calibration")
-        print("Calibration Complete!")
+        return iris_x - anchor_x, iris_y - anchor_y
 
+    # ---------------- MAIN FUNCTION ---------------- #
     def get_gaze_coordinates(self, frame, screen_w, screen_h):
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         results = self.face_mesh.process(rgb_frame)
 
         if results.multi_face_landmarks:
             landmarks = results.multi_face_landmarks[0].landmark
-            
-            # Center point of the irises in normalized camera space (0.0 to 1.0)
-            gaze_x = (landmarks[468].x + landmarks[473].x) / 2
-            gaze_y = (landmarks[468].y + landmarks[473].y) / 2
 
-            # --- CALIBRATION MAPPING ---
-            # Instead of multiplying by screen_w directly, we map the iris 
-            # position relative to your recorded calibration boundaries.
-            
-            # Formula: (current - min) / (max - min)
-            # This turns your eye movement into a clean 0.0 to 1.0 percentage of your screen.
-            
-            denom_x = (self.calib_right - self.calib_left)
-            denom_y = (self.calib_bottom - self.calib_top)
-            
-            if denom_x == 0 or denom_y == 0:
-                return None # Prevent division by zero if not calibrated
-                
-            relative_x = (gaze_x - self.calib_left) / denom_x
-            relative_y = (gaze_y - self.calib_top) / denom_y
+            curr_x, curr_y = self._get_eye_relative_pos(landmarks)
 
-            # Invert X for mirrored webcam, then scale to pixels
-            x = int((1 - relative_x) * screen_w)
-            y = int(relative_y * screen_h)
-            
-            # Constrain to screen bounds
-            x = max(0, min(x, screen_w - 1))
-            y = max(0, min(y, screen_h - 1))
-            
-            return (x, y)
+            # Offset from center
+            diff_x = curr_x - self.center_rel_x
+            diff_y = curr_y - self.center_rel_y
+
+            # Prevent division errors
+            rx_l = max(self.range_x_left, 1e-6)
+            rx_r = max(self.range_x_right, 1e-6)
+            ry_t = max(self.range_y_top, 1e-6)
+            ry_b = max(self.range_y_bottom, 1e-6)
+
+            # Quadrant scaling
+            if diff_x < 0:
+                norm_x = 0.5 + (diff_x / (rx_l * 2))
+            else:
+                norm_x = 0.5 + (diff_x / (rx_r * 2))
+
+            if diff_y < 0:
+                norm_y = 0.5 + (diff_y / (ry_t * 2))
+            else:
+                norm_y = 0.5 + (diff_y / (ry_b * 2))
+
+            # Clamp normalized values
+            norm_x = max(0, min(1, norm_x))
+            norm_y = max(0, min(1, norm_y))
+
+            # Convert to screen coords
+            target_x = int((1 - norm_x) * screen_w)
+            target_y = int(norm_y * screen_h)
+
+            # Apply smoothing
+            alpha = self.smoothing
+            self.prev_x = int(self.prev_x * (1 - alpha) + target_x * alpha)
+            self.prev_y = int(self.prev_y * (1 - alpha) + target_y * alpha)
+
+            return (
+                max(0, min(self.prev_x, screen_w - 1)),
+                max(0, min(self.prev_y, screen_h - 1))
+            )
+
         return None
