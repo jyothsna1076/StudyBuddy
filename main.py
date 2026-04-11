@@ -8,7 +8,6 @@ from calibration import CalibrationManager
 def draw_ui(canvas, state, level, color):
     cv2.putText(canvas, f"State: {str(state).upper()}", (20, 40),
                 cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
-
     cv2.putText(canvas, f"Struggle: {str(level).upper()}", (20, 80),
                 cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
 
@@ -23,17 +22,21 @@ def main():
     WIN_MATERIAL = "StudyBuddy"
     WIN_WEBCAM = "Webcam"
 
-    # 2. Initialize Modules
+    # 2. Initialize Hardware/AI
     cap = cv2.VideoCapture(0)
     emotion_detector = EmotionDetector()
     heatmap = HeatmapGenerator(w, h)
-    mouse = MouseTracker(WIN_MATERIAL)
 
-    # 3. Calibration
+    # 3. Calibration Phase
     calibrator = CalibrationManager(None, emotion_detector) 
     calibrator.calibrate_camera_center(cap, w, h)
-    cv2.destroyAllWindows() 
-    cv2.waitKey(1)
+    
+    # CRITICAL: Clean up calibration window but immediately 
+    # prepare the StudyBuddy window for the mouse tracker
+    cv2.destroyAllWindows()
+    cv2.namedWindow(WIN_MATERIAL) 
+    mouse = MouseTracker(WIN_MATERIAL)
+
     print("System Ready. Mouse tracking active. Press Q or click [X] to quit.")
 
     frame_count = 0
@@ -46,6 +49,7 @@ def main():
         if not ret:
             break
 
+        # AI logic every 10 frames
         if frame_count % 10 == 0:
             result = emotion_detector.get_struggle_index(frame)
             struggle_level = result[0]
@@ -53,22 +57,30 @@ def main():
         
         frame_count += 1
 
+        # GET MOUSE POSITION (updates via callback in MouseTracker)
         x, y = mouse.get_position()
+        
+        # Clamp to image boundaries
         x = max(0, min(x, w - 1))
         y = max(0, min(y, h - 1))
 
         canvas = study_material.copy()
 
+        # Update Heatmap if struggle is HIGH
         if str(struggle_level).lower() == "high":
+            # This calls your heatmap.add_struggle_point logic
             heatmap.add_struggle_point(x, y)
-            color = (0, 0, 255) 
+            color = (0, 0, 255) # Red
         else:
-            color = (0, 255, 0) 
+            color = (0, 255, 0) # Green
 
+        # Draw the "Cursor" circle (Always follows mouse)
         cv2.circle(canvas, (x, y), 15, color, -1)
 
+        # Apply Heatmap Overlay from your HeatmapGenerator
         overlay = heatmap.get_heatmap_overlay()
         if overlay is not None:
+            # We only overlay non-black pixels from the Jet colormap
             gray = cv2.cvtColor(overlay, cv2.COLOR_BGR2GRAY)
             mask = gray > 0
             if mask.any():
@@ -79,14 +91,12 @@ def main():
         cv2.imshow(WIN_WEBCAM, cv2.flip(frame, 1))
         cv2.imshow(WIN_MATERIAL, canvas)
 
-        # --- EXIT LOGIC ---
+        # Exit Logic
         key = cv2.waitKey(1) & 0xFF
-        
-        # 1. Exit if 'q' is pressed
         if key == ord('q'):
             break
-            
-        # 2. Exit if the [X] button is clicked on either window
+        
+        # Proper [X] button handling
         if cv2.getWindowProperty(WIN_MATERIAL, cv2.WND_PROP_VISIBLE) < 1 or \
            cv2.getWindowProperty(WIN_WEBCAM, cv2.WND_PROP_VISIBLE) < 1:
             break
