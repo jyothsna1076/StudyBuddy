@@ -95,8 +95,10 @@ class EmotionDetector:
 
         return looking_sideways or looking_up
 
-    def check_body_language(self, pose_landmarks):
-        if not pose_landmarks: return False, False
+    def check_body_language(self, pose_landmarks, face_landmarks=None):
+        if not pose_landmarks:
+            return False, False, False
+
         nose = pose_landmarks.landmark[0]
         l_shoulder = pose_landmarks.landmark[11]
         r_shoulder = pose_landmarks.landmark[12]
@@ -105,11 +107,32 @@ class EmotionDetector:
 
         avg_shoulder_y = (l_shoulder.y + r_shoulder.y) / 2.0
         head_to_shoulder_dist = avg_shoulder_y - nose.y
-        is_slouching = head_to_shoulder_dist < 0.15 
-        hands_on_face = (l_wrist.y < nose.y) or (r_wrist.y < nose.y)
 
-        return is_slouching, hands_on_face
+        is_slouching = head_to_shoulder_dist < 0.15
 
+        # --- NEW: Eye-level detection ---
+        left_eye_y = None
+        right_eye_y = None
+
+        if face_landmarks:
+            left_eye_y = face_landmarks.landmark[159].y
+            right_eye_y = face_landmarks.landmark[386].y
+
+        left_hand_eye = False
+        right_hand_eye = False
+
+        if left_eye_y is not None:
+            left_hand_eye = abs(l_wrist.y - left_eye_y) < 0.05
+
+        if right_eye_y is not None:
+            right_hand_eye = abs(r_wrist.y - right_eye_y) < 0.05
+
+        both_eyes_covered = left_hand_eye and right_hand_eye
+        one_eye_covered = left_hand_eye or right_hand_eye
+
+        return is_slouching, one_eye_covered, both_eyes_covered
+    
+    
     def get_struggle_index(self, frame):
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         results = self.holistic.process(rgb_frame)
