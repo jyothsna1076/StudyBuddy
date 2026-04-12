@@ -71,12 +71,14 @@ class EmotionDetector:
             left_eye_top = results.face_landmarks.landmark[159].y
             right_eye_top = results.face_landmarks.landmark[386].y
             
+            face_width = abs(left_face.x - right_face.x) # Get face width
             brow_dist = abs(inner_left_brow.x - inner_right_brow.x)
-            face_width = abs(left_face.x - right_face.x)
             
             self.brow_ratio_baseline = brow_dist / (face_width if face_width > 0 else 0.001)
-            self.brow_height_left_baseline = abs(inner_left_brow.y - left_eye_top)
-            self.brow_height_right_baseline = abs(inner_right_brow.y - right_eye_top)
+            
+            # THE FIX: Normalize vertical height using face_width
+            self.brow_height_left_baseline = abs(inner_left_brow.y - left_eye_top) / (face_width if face_width > 0 else 0.001)
+            self.brow_height_right_baseline = abs(inner_right_brow.y - right_eye_top) / (face_width if face_width > 0 else 0.001)
 
             return True
         return False
@@ -189,15 +191,18 @@ class EmotionDetector:
         # FACE
         if results.face_landmarks:
             self.missing_face_start_time = None
+            
+            # --- THE FIX 1: Actually call the looking away check! ---
+            looking_away = self.check_head_pose(results.face_landmarks)
 
             ear = self.calculate_ear(results.face_landmarks)
             mar = self.calculate_mar(results.face_landmarks)
 
-            # SLEEPY LOGIC
-            if ear < 0.22 or (self.ear_baseline and ear < self.ear_baseline * 0.7):
+            # SLEEPY LOGIC (Relaxed baseline and reduced time to 1.0s)
+            if ear < 0.22 or (self.ear_baseline and ear < self.ear_baseline * 0.80):
                 if self.eyes_closed_start_time is None:
                     self.eyes_closed_start_time = time.time()
-                elif time.time() - self.eyes_closed_start_time > 2.0:
+                elif time.time() - self.eyes_closed_start_time > 1.0: # Reduced from 2.0
                     eyes_closed = True
             else:
                 self.eyes_closed_start_time = None
@@ -213,34 +218,35 @@ class EmotionDetector:
             left_face = results.face_landmarks.landmark[234]
             right_face = results.face_landmarks.landmark[454]
 
-            brow_dist = abs(inner_left_brow.x - inner_right_brow.x)
-            face_width = abs(left_face.x - right_face.x)
-            brow_ratio = brow_dist / (face_width if face_width > 0 else 0.001)
+            # Check if the face is hitting the edge of the camera frame
+            is_clipping_edge = left_face.x < 0.05 or right_face.x > 0.95
 
-            left_eye_top = results.face_landmarks.landmark[159].y
-            right_eye_top = results.face_landmarks.landmark[386].y
-            
-            brow_height_left = abs(inner_left_brow.y - left_eye_top)
-            brow_height_right = abs(inner_right_brow.y - right_eye_top)
+            # Only run the eyebrow math if they are NOT at the edge of the screen
+            if not is_clipping_edge:
+                face_width = abs(left_face.x - right_face.x)
+                brow_dist = abs(inner_left_brow.x - inner_right_brow.x)
+                brow_ratio = brow_dist / (face_width if face_width > 0 else 0.001)
 
-            if self.brow_ratio_baseline is not None:
-                # 1. Confused (Vertical Lines / Squeeze): 6% squeeze inward
-                if brow_ratio < self.brow_ratio_baseline * 0.94:
-                    is_confused_squeeze = True
-                    
-                # 2. Heavy Squinting/Frowning: Brows drop down heavily (20% drop)
-                elif (brow_height_left < self.brow_height_left_baseline * 0.80) or \
-                     (brow_height_right < self.brow_height_right_baseline * 0.80):
-                    brows_furrowed = True
+                left_eye_top = results.face_landmarks.landmark[159].y
+                right_eye_top = results.face_landmarks.landmark[386].y
+                
+                brow_height_left = abs(inner_left_brow.y - left_eye_top) / (face_width if face_width > 0 else 0.001)
+                brow_height_right = abs(inner_right_brow.y - right_eye_top) / (face_width if face_width > 0 else 0.001)
 
-            looking_away = self.check_head_pose(results.face_landmarks)
-
+                if self.brow_ratio_baseline is not None:
+                    # Confused (Vertical Lines)
+                    if brow_ratio < self.brow_ratio_baseline * 0.94:
+                        is_confused_squeeze = True
+                        
+                    # Squinting / Frowning
+                    elif (brow_height_left < self.brow_height_left_baseline * 0.85) or \
+                         (brow_height_right < self.brow_height_right_baseline * 0.85):
+                        brows_furrowed = True
+                        
+        # --- THE FIX 2: Trigger face missing if no landmarks are found ---
         else:
-            if self.missing_face_start_time is None:
-                self.missing_face_start_time = time.time()
-            elif time.time() - self.missing_face_start_time > 0.5:
-                face_missing = True
-
+            face_missing = True
+            
         # BODY
         if results.pose_landmarks:
             is_slouching, one_hand, both_hands = self.check_body_language(

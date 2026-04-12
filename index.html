@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>StudyBuddy Web</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f9;
+            margin: 0;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+        /* Left Side: The PDF Viewer */
+        .pdf-section {
+            flex: 3;
+            border-right: 2px solid #ccc;
+            display: flex;
+            flex-direction: column;
+        }
+        .pdf-header {
+            padding: 15px;
+            background: #fff;
+            border-bottom: 1px solid #ddd;
+        }
+        #pdf-frame {
+            flex-grow: 1;
+            width: 100%;
+            border: none;
+            background: #ebebeb;
+        }
+        /* Right Side: Sidebar Controls */
+        .sidebar {
+            flex: 1;
+            background: #fff;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            box-shadow: -2px 0 5px rgba(0,0,0,0.05);
+        }
+        button {
+            padding: 15px;
+            font-size: 16px;
+            font-weight: bold;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .btn-start { background: #28a745; color: white; }
+        .btn-start:hover { background: #218838; }
+        .btn-state { background: #17a2b8; color: white; display: none; }
+        .btn-state:hover { background: #138496; }
+        .btn-report { background: #007bff; color: white; display: none; }
+        .btn-report:hover { background: #0069d9; }
+        
+        /* The "Check State" Pop-Up (Modal) */
+        .state-modal {
+            display: none; 
+            position: absolute;
+            top: 20px;
+            right: 25vw; 
+            background: rgba(0, 0, 0, 0.85);
+            color: white;
+            padding: 20px 40px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            text-align: center;
+            z-index: 1000;
+        }
+        .state-modal h2 { margin: 0 0 10px 0; font-size: 24px; color: #4facfe; }
+        .state-modal p { margin: 5px 0; font-size: 18px; }
+        
+        /* NEW: Close Button CSS */
+        .close-btn {
+            position: absolute;
+            top: 10px;
+            right: 15px;
+            color: #aaa;
+            font-size: 24px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .close-btn:hover {
+            color: #fff;
+        }
+        
+        #hidden-webcam { display: none; }
+    </style>
+</head>
+<body>
+
+    <div class="pdf-section">
+        <div class="pdf-header">
+            <input type="file" id="pdf-upload" accept="application/pdf">
+        </div>
+        <iframe id="pdf-frame"></iframe>
+    </div>
+
+    <div class="sidebar">
+        <h2 style="margin-top:0;">StudyBuddy</h2>
+        <p id="status-text">Upload a PDF to begin.</p>
+        
+        <button id="start-btn" class="btn-start" onclick="startStudying()">Start Studying</button>
+        <button id="state-btn" class="btn-state" onclick="openStateMonitor()">Open Live Monitor</button>
+        <button id="report-btn" class="btn-report" onclick="fetchReport()">End & Get Report</button>
+    </div>
+
+    <div id="state-modal" class="state-modal">
+        <span class="close-btn" onclick="closeStateMonitor()">&times;</span>
+        <h2>Live Feed</h2>
+        <p>State: <strong id="modal-state">...</strong></p>
+        <p>Struggle: <strong id="modal-struggle">...</strong></p>
+    </div>
+
+    <video id="hidden-webcam" autoplay playsinline></video>
+    <canvas id="hidden-canvas" style="display:none;"></canvas>
+
+    <script>
+        const video = document.getElementById('hidden-webcam');
+        const canvas = document.getElementById('hidden-canvas');
+        const ctx = canvas.getContext('2d');
+        let studyInterval = null;
+        let liveMonitorInterval = null; // NEW: Tracks the live monitor updates
+
+        // 1. Handle PDF Upload
+        document.getElementById('pdf-upload').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if(file && file.type === "application/pdf") {
+                const fileURL = URL.createObjectURL(file);
+                document.getElementById('pdf-frame').src = fileURL;
+                document.getElementById('status-text').innerText = "PDF Loaded. Ready when you are.";
+            }
+        });
+
+        // 2. Start Studying
+        function startStudying() {
+            fetch('/start_session', { method: 'POST' });
+
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(stream => {
+                    video.srcObject = stream;
+                    document.getElementById('status-text').innerText = "Session Active. AI Tracking is running in the background.";
+                    
+                    document.getElementById('start-btn').style.display = 'none';
+                    document.getElementById('state-btn').style.display = 'block';
+                    document.getElementById('report-btn').style.display = 'block';
+
+                    studyInterval = setInterval(sendFrame, 500);
+                })
+                .catch(err => {
+                    alert("Camera access is required to track your study session.");
+                });
+        }
+
+        // 3. Send frames silently
+        function sendFrame() {
+            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                
+                const imageData = canvas.toDataURL('image/jpeg', 0.5);
+
+                fetch('/process_frame', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ image: imageData })
+                }).catch(err => console.error(err));
+            }
+        }
+
+        // 4. NEW: Open Live Monitor
+        function openStateMonitor() {
+            const modal = document.getElementById('state-modal');
+            modal.style.display = 'block';
+            
+            // Fetch immediately once
+            updateLiveText();
+            
+            // Then fetch every 1 second until closed
+            if (!liveMonitorInterval) {
+                liveMonitorInterval = setInterval(updateLiveText, 1000);
+            }
+        }
+
+        // 4b. NEW: Fetch and update the text
+        function updateLiveText() {
+            fetch('/get_current_state')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('modal-state').innerText = data.state.toUpperCase();
+                    document.getElementById('modal-struggle').innerText = data.struggle.toUpperCase();
+                })
+                .catch(err => console.error("Could not fetch state:", err));
+        }
+
+        // 4c. NEW: Close the Monitor
+        function closeStateMonitor() {
+            document.getElementById('state-modal').style.display = 'none';
+            // Stop polling the server when the window is hidden
+            clearInterval(liveMonitorInterval);
+            liveMonitorInterval = null; 
+        }
+
+        // 5. Get Report
+        function fetchReport() {
+            clearInterval(studyInterval);
+            if (liveMonitorInterval) clearInterval(liveMonitorInterval);
+            
+            fetch('/get_report')
+                .then(response => response.json())
+                .then(data => {
+                    alert(`🏁 SESSION COMPLETE 🏁\n\nEfficiency: ${data.efficiency}%\nTotal Time: ${data.total_time_minutes} mins`);
+                    window.location.reload(); 
+                });
+        }
+    </script>
+</body>
+</html>
