@@ -8,31 +8,22 @@ from heatmap_generator import HeatmapGenerator
 from mouse_tracker import MouseTracker 
 from calibration import CalibrationManager
 
-# --- PDF LOADING ---
-def load_full_document(pdf_path):
-    """Stacks all PDF pages into one giant vertical image."""
+# --- OPTIMIZED PDF LOADING ---
+def load_pdf_page(doc, page_num):
+    """Loads a SINGLE page as a normal-sized image, zero lag."""
     try:
-        doc = fitz.open(pdf_path)
-        pages = []
-        print(f"Processing {len(doc)} pages...")
-        for i in range(len(doc)):
-            page = doc.load_page(i)
-            # 2.0x scale provides a good balance of clarity and performance
-            pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
-            img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.h, pix.w, 3)
-            pages.append(cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
-        
-        full_img = np.vstack(pages)
-        return full_img
+        page = doc.load_page(page_num)
+        pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
+        img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.h, pix.w, 3)
+        return cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
     except Exception as e:
-        print(f"Error loading PDF: {e}")
+        print(f"Error loading page {page_num}: {e}")
         return None
 
 # --- UI HELPER ---
-def draw_ui(canvas, state, level, color, mode, scroll_pos):
-    # Semi-transparent background box for the UI
-    cv2.rectangle(canvas, (10, 10), (380, 160), (255, 255, 255), -1)
-    cv2.rectangle(canvas, (10, 10), (380, 160), (0, 0, 0), 1)
+def draw_ui(canvas, state, level, color, mode, scroll_pos, current_page, total_pages):
+    cv2.rectangle(canvas, (10, 10), (380, 190), (255, 255, 255), -1)
+    cv2.rectangle(canvas, (10, 10), (380, 190), (0, 0, 0), 1)
     
     cv2.putText(canvas, f"MODE: {mode.upper()}", (25, 45),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
@@ -40,7 +31,9 @@ def draw_ui(canvas, state, level, color, mode, scroll_pos):
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
     cv2.putText(canvas, f"STRUGGLE: {str(level).upper()}", (25, 115),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
-    cv2.putText(canvas, f"SCROLL: {scroll_pos}px", (25, 145),
+    cv2.putText(canvas, f"PAGE: {current_page + 1} / {total_pages}", (25, 145),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+    cv2.putText(canvas, f"SCROLL: {scroll_pos}px", (25, 175),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (100, 100, 100), 1)
 
 def main():
@@ -54,15 +47,18 @@ def main():
         choice = input("Selection (1 for Cursor/Line, 2 for Gaze/Page): ").strip()
         track_mode = "cursor" if choice == "1" else "gaze"
 
-        # 2. LOAD PDF
+        # 2. LOAD PDF DOC
         pdf_path = 'assets/study_material.pdf'
-        full_doc = load_full_document(pdf_path)
-        if full_doc is None:
-            print(f"CRITICAL ERROR: '{pdf_path}' not found!")
-            input("Press Enter to Exit...")
-            return
+        doc = fitz.open(pdf_path)
+        total_pages = len(doc)
         
-        DOC_H, DOC_W = full_doc.shape[:2]
+        if total_pages == 0:
+            print(f"CRITICAL ERROR: '{pdf_path}' is empty or not found!")
+            return
+            
+        current_page = 0
+        current_doc_img = load_pdf_page(doc, current_page)
+        DOC_H, DOC_W = current_doc_img.shape[:2]
 
         # 3. HARDWARE & TRACKING INIT
         cap = cv2.VideoCapture(0)
@@ -71,11 +67,13 @@ def main():
             return
 
         emotion_detector = EmotionDetector()
-        heatmap = HeatmapGenerator(DOC_W, DOC_H)
+        
+        # We now keep a dictionary of heatmaps (one per page)
+        heatmaps = {0: HeatmapGenerator(DOC_W, DOC_H)}
 
         # 4. CALIBRATION
         calibrator = CalibrationManager(None, emotion_detector) 
-        calibrator.calibrate_camera_center(cap, DOC_W, 850)
+        calibrator.calibrate_camera_center(cap, DOC_W, min(850, DOC_H))
         
         cv2.destroyAllWindows()
         WIN_NAME = "StudyBuddy - Reading"
@@ -91,12 +89,16 @@ def main():
         struggle_level = "low"
         state = "neutral"
         color = (0, 255, 0)
-        scroll_y = 0
+        
         VIEW_H = 850
-        scroll_speed = 35 # Faster scroll for stacked pages
+        scroll_y = 0
+        scroll_speed = 35 
+        
+        cached_heatmap = None
+        heatmap_needs_update = True
 
         print("\n--- MAIN SESSION ACTIVE ---")
-        print("Move mouse to top/bottom edges to scroll. Press 'Q' to end session.")
+        print("Move mouse to top/bottom edges to scroll through pages. Press 'Q' to end session.")
 
         while cap.isOpened():
             if cv2.getWindowProperty(WIN_NAME, cv2.WND_PROP_VISIBLE) < 1:
@@ -105,19 +107,50 @@ def main():
             ret, frame = cap.read()
             if not ret: break
 
-            # --- TIME TRACKING ---
             current_time = time.time()
             delta_time = current_time - last_frame_time
             last_frame_time = current_time
 
-            # --- INPUT & SCROLLING ---
+            # --- PAGE & SCROLLING LOGIC ---
             mx, my = mouse.get_position()
-            if my < VIEW_H * 0.15: # Top 15%
-                scroll_y = max(0, scroll_y - scroll_speed)
-            elif my > VIEW_H * 0.85: # Bottom 15%
-                scroll_y = min(DOC_H - VIEW_H, scroll_y + scroll_speed)
             
+            # Clamp viewport in case page is shorter than 850px
+            actual_view_h = min(VIEW_H, DOC_H)
+
+            if my < actual_view_h * 0.15: # Top 15%
+                scroll_y -= scroll_speed
+                # If we scroll past the top of the page, go to previous page
+                if scroll_y < 0:
+                    if current_page > 0:
+                        current_page -= 1
+                        current_doc_img = load_pdf_page(doc, current_page)
+                        DOC_H, DOC_W = current_doc_img.shape[:2]
+                        if current_page not in heatmaps:
+                            heatmaps[current_page] = HeatmapGenerator(DOC_W, DOC_H)
+                        scroll_y = max(0, DOC_H - actual_view_h) # Start at bottom of previous page
+                        cached_heatmap = None
+                        heatmap_needs_update = True
+                    else:
+                        scroll_y = 0 # Stuck at top of page 1
+                        
+            elif my > actual_view_h * 0.85: # Bottom 15%
+                scroll_y += scroll_speed
+                # If we scroll past the bottom of the page, go to next page
+                if scroll_y > DOC_H - actual_view_h:
+                    if current_page < total_pages - 1:
+                        current_page += 1
+                        current_doc_img = load_pdf_page(doc, current_page)
+                        DOC_H, DOC_W = current_doc_img.shape[:2]
+                        if current_page not in heatmaps:
+                            heatmaps[current_page] = HeatmapGenerator(DOC_W, DOC_H)
+                        scroll_y = 0 # Start at top of new page
+                        cached_heatmap = None
+                        heatmap_needs_update = True
+                    else:
+                        scroll_y = DOC_H - actual_view_h # Stuck at bottom of last page
+
             abs_doc_y = scroll_y + my
+            active_heatmap = heatmaps[current_page]
 
             # --- AI PROCESSING ---
             if frame_count % 10 == 0:
@@ -126,45 +159,39 @@ def main():
                 state = result[1]
             frame_count += 1
 
-            # --- RECORD DURATION ---
             state_durations[state] = state_durations.get(state, 0.0) + delta_time
 
             # --- RENDERING ---
             try:
-                # 1. Extract Viewport from full doc
-                view_frame = full_doc[scroll_y : scroll_y + VIEW_H, 0 : DOC_W].copy()
+                view_frame = current_doc_img[scroll_y : scroll_y + actual_view_h, 0 : DOC_W].copy()
                 
-                # 2. Update Heatmap logic
-               # --- UPDATE HEATMAP ---
+                # Update Heatmap
                 if str(struggle_level).lower() == "high":
-                    # NEW: Pass scroll_y and VIEW_H to ensure only the visible page turns red
-                    intensity_val = 1.0 if track_mode == "cursor" else 0.5
-                    heatmap.add_struggle_point(
-                        mx, 
-                        abs_doc_y, 
-                        mode=track_mode, 
-                        scroll_y=scroll_y, 
-                        view_h=VIEW_H
-                    )
-                    color = (0, 0, 255) # Red
+                    active_heatmap.add_struggle_point(mx, abs_doc_y, mode=track_mode)
+                    heatmap_needs_update = True 
+                    color = (0, 0, 255) 
+                else:
+                    color = (0, 255, 0) 
 
-                # 3. Apply Heatmap Overlay
-                full_heatmap = heatmap.get_heatmap_overlay()
-                if full_heatmap is not None:
-                    h_slice = full_heatmap[scroll_y : scroll_y + VIEW_H, 0 : DOC_W]
+                # Apply Overlay (Optimized)
+                if heatmap_needs_update or cached_heatmap is None:
+                    cached_heatmap = active_heatmap.get_heatmap_overlay()
+                    heatmap_needs_update = False
+
+                if cached_heatmap is not None:
+                    h_slice = cached_heatmap[scroll_y : scroll_y + actual_view_h, 0 : DOC_W]
                     cv2.addWeighted(view_frame, 0.7, h_slice, 0.3, 0, view_frame)
 
-                # 4. Display UI and Cursor
                 if track_mode == "cursor":
                     cv2.circle(view_frame, (mx, my), 15, color, 2)
                 
-                draw_ui(view_frame, state, struggle_level, color, track_mode, scroll_y)
+                draw_ui(view_frame, state, struggle_level, color, track_mode, scroll_y, current_page, total_pages)
                 
                 cv2.imshow(WIN_NAME, view_frame)
                 cv2.imshow("Webcam Feed", cv2.flip(frame, 1))
 
             except Exception as render_err:
-                pass # Silently handle minor clipping during fast scrolls
+                pass 
 
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
@@ -186,7 +213,6 @@ def main():
             percentage = (duration / total_time) * 100
             print(f" • {str(s).capitalize()}: {duration/60:.2f} mins ({percentage:.1f}%)")
 
-        # Save to file
         filename = f"study_report_{int(time.time())}.txt"
         with open(filename, "w", encoding="utf-8") as f:
             f.write("FINAL STUDY SESSION REPORT\n")
