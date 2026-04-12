@@ -119,12 +119,12 @@
     <video id="hidden-webcam" autoplay playsinline></video>
     <canvas id="hidden-canvas" style="display:none;"></canvas>
 
-    <script>
+<script>
         const video = document.getElementById('hidden-webcam');
         const canvas = document.getElementById('hidden-canvas');
         const ctx = canvas.getContext('2d');
         let studyInterval = null;
-        let liveMonitorInterval = null; // NEW: Tracks the live monitor updates
+        let liveMonitorInterval = null; 
 
         // 1. Handle PDF Upload
         document.getElementById('pdf-upload').addEventListener('change', function(e) {
@@ -165,29 +165,47 @@
                 
                 const imageData = canvas.toDataURL('image/jpeg', 0.5);
 
+                // --- NEW: Calculate Window & Scroll Data ---
+                let currentScrollY = 0;
+                try {
+                    // Try to get the scroll position inside the PDF frame
+                    currentScrollY = document.getElementById('pdf-frame').contentWindow.scrollY || 0;
+                } catch(e) {
+                    // Fallback to main window if the PDF viewer blocks access
+                    currentScrollY = window.scrollY;
+                }
+                
+                const screenW = window.innerWidth;
+                const screenH = window.innerHeight;
+                // -------------------------------------------
+
                 fetch('/process_frame', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ image: imageData })
+                    // NEW: Added scroll and screen size to the payload
+                    body: JSON.stringify({ 
+                        image: imageData,
+                        scroll_y: currentScrollY,
+                        screen_w: screenW,
+                        screen_h: screenH
+                    })
                 }).catch(err => console.error(err));
             }
         }
 
-        // 4. NEW: Open Live Monitor
+        // 4. Open Live Monitor
         function openStateMonitor() {
             const modal = document.getElementById('state-modal');
             modal.style.display = 'block';
             
-            // Fetch immediately once
             updateLiveText();
             
-            // Then fetch every 1 second until closed
             if (!liveMonitorInterval) {
                 liveMonitorInterval = setInterval(updateLiveText, 1000);
             }
         }
 
-        // 4b. NEW: Fetch and update the text
+        // 4b. Fetch and update the text
         function updateLiveText() {
             fetch('/get_current_state')
                 .then(response => response.json())
@@ -198,10 +216,9 @@
                 .catch(err => console.error("Could not fetch state:", err));
         }
 
-        // 4c. NEW: Close the Monitor
+        // 4c. Close the Monitor
         function closeStateMonitor() {
             document.getElementById('state-modal').style.display = 'none';
-            // Stop polling the server when the window is hidden
             clearInterval(liveMonitorInterval);
             liveMonitorInterval = null; 
         }
@@ -214,7 +231,19 @@
             fetch('/get_report')
                 .then(response => response.json())
                 .then(data => {
-                    alert(`🏁 SESSION COMPLETE 🏁\n\nEfficiency: ${data.efficiency}%\nTotal Time: ${data.total_time_minutes} mins`);
+                    // --- NEW: Format the hardest sections for the alert box ---
+                    let reportMessage = `🏁 SESSION COMPLETE 🏁\n\nEfficiency: ${data.efficiency}%\nTotal Time: ${data.total_time_minutes} mins\n\n`;
+                    
+                    if (data.hardest_sections && data.hardest_sections.length > 0) {
+                        reportMessage += `⚠️ HARDEST SECTIONS IDENTIFIED:\n`;
+                        data.hardest_sections.forEach(section => {
+                            reportMessage += `- Est. Page ${section.estimated_page} (Line ${section.document_pixel_y}) : Struggled for ${section.duration_seconds}s\n`;
+                        });
+                    } else {
+                        reportMessage += `✅ No major struggle areas detected! Great focus.`;
+                    }
+                    
+                    alert(reportMessage);
                     window.location.reload(); 
                 });
         }
