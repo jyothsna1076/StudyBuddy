@@ -239,8 +239,8 @@ class EmotionDetector:
                         is_confused_squeeze = True
                         
                     # Squinting / Frowning
-                    elif (brow_height_left < self.brow_height_left_baseline * 0.85) or \
-                         (brow_height_right < self.brow_height_right_baseline * 0.85):
+                    elif (brow_height_left < self.brow_height_left_baseline * 0.70) or \
+                         (brow_height_right < self.brow_height_right_baseline * 0.70):
                         brows_furrowed = True
                         
         # --- THE FIX 2: Trigger face missing if no landmarks are found ---

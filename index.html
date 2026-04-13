@@ -3,90 +3,42 @@
 <head>
     <meta charset="UTF-8">
     <title>StudyBuddy Web</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+    </script>
+    
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #f4f4f9;
-            margin: 0;
-            display: flex;
-            height: 100vh;
-            overflow: hidden;
-        }
-        /* Left Side: The PDF Viewer */
-        .pdf-section {
-            flex: 3;
-            border-right: 2px solid #ccc;
-            display: flex;
-            flex-direction: column;
-        }
-        .pdf-header {
-            padding: 15px;
-            background: #fff;
-            border-bottom: 1px solid #ddd;
-        }
-        #pdf-frame {
-            flex-grow: 1;
-            width: 100%;
-            border: none;
-            background: #ebebeb;
-        }
-        /* Right Side: Sidebar Controls */
-        .sidebar {
-            flex: 1;
-            background: #fff;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-            box-shadow: -2px 0 5px rgba(0,0,0,0.05);
-        }
-        button {
-            padding: 15px;
-            font-size: 16px;
-            font-weight: bold;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: 0.2s;
-        }
+        body { font-family: Arial, sans-serif; background-color: #f4f4f9; margin: 0; display: flex; height: 100vh; overflow: hidden; }
+        .pdf-section { flex: 3; border-right: 2px solid #ccc; display: flex; flex-direction: column; }
+        .pdf-header { padding: 15px; background: #fff; border-bottom: 1px solid #ddd; display: flex; gap: 15px; align-items: center; }
+        
+        /* NEW: Our custom scrollable container instead of an iframe */
+        #pdf-container { flex-grow: 1; width: 100%; overflow-y: auto; background: #ebebeb; display: flex; flex-direction: column; align-items: center; padding-top: 20px; gap: 15px; }
+        #pdf-container canvas { box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
+        
+        .sidebar { flex: 1; background: #fff; padding: 20px; display: flex; flex-direction: column; gap: 15px; box-shadow: -2px 0 5px rgba(0,0,0,0.05); overflow-y: auto;}
+        
+        button { padding: 15px; font-size: 16px; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; transition: 0.2s; }
         .btn-start { background: #28a745; color: white; }
         .btn-start:hover { background: #218838; }
         .btn-state { background: #17a2b8; color: white; display: none; }
         .btn-state:hover { background: #138496; }
-        .btn-report { background: #007bff; color: white; display: none; }
-        .btn-report:hover { background: #0069d9; }
+        .btn-report { background: #dc3545; color: white; display: none; }
+        .btn-report:hover { background: #c82333; }
         
-        /* The "Check State" Pop-Up (Modal) */
-        .state-modal {
-            display: none; 
-            position: absolute;
-            top: 20px;
-            right: 25vw; 
-            background: rgba(0, 0, 0, 0.85);
-            color: white;
-            padding: 20px 40px;
-            border-radius: 12px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-            text-align: center;
-            z-index: 1000;
-        }
-        .state-modal h2 { margin: 0 0 10px 0; font-size: 24px; color: #4facfe; }
-        .state-modal p { margin: 5px 0; font-size: 18px; }
+        /* NEW: Download Button Styling */
+        .btn-download { background: #6f42c1; color: white; text-decoration: none; text-align: center; display: block; padding: 15px; font-size: 16px; font-weight: bold; border-radius: 8px; margin-top: 10px;}
+        .btn-download:hover { background: #59339d; }
+
+        .state-modal { display: none; position: absolute; top: 20px; right: 25vw; background: rgba(0, 0, 0, 0.85); color: white; padding: 20px 40px; border-radius: 12px; z-index: 1000; text-align: center; }
+        .state-modal h2 { margin: 0 0 10px 0; color: #4facfe; }
+        .close-btn { position: absolute; top: 10px; right: 15px; color: #aaa; font-size: 24px; cursor: pointer; }
+        .close-btn:hover { color: #fff; }
         
-        /* NEW: Close Button CSS */
-        .close-btn {
-            position: absolute;
-            top: 10px;
-            right: 15px;
-            color: #aaa;
-            font-size: 24px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: 0.2s;
-        }
-        .close-btn:hover {
-            color: #fff;
-        }
+        .settings-box { background: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #ddd; }
+        .settings-box select { width: 100%; padding: 8px; margin-top: 5px; border-radius: 4px; border: 1px solid #ccc;}
+        .instruction-text { font-size: 13px; color: #666; margin-top: 5px; font-style: italic; }
         
         #hidden-webcam { display: none; }
     </style>
@@ -97,16 +49,28 @@
         <div class="pdf-header">
             <input type="file" id="pdf-upload" accept="application/pdf">
         </div>
-        <iframe id="pdf-frame"></iframe>
+        <div id="pdf-container"></div> 
     </div>
 
-    <div class="sidebar">
+    <div class="sidebar" id="sidebar-content">
         <h2 style="margin-top:0;">StudyBuddy</h2>
+        
+        <div class="settings-box" id="settings-panel">
+            <label><strong>Tracking Mode:</strong></label>
+            <select id="tracking-mode" onchange="updateInstructions()">
+                <option value="page">General Page (Eye Tracking)</option>
+                <option value="line">Exact Line (Cursor Tracking)</option>
+            </select>
+            <p class="instruction-text" id="mode-instruction">We will track which general section of the page you are looking at.</p>
+        </div>
+
         <p id="status-text">Upload a PDF to begin.</p>
         
         <button id="start-btn" class="btn-start" onclick="startStudying()">Start Studying</button>
         <button id="state-btn" class="btn-state" onclick="openStateMonitor()">Open Live Monitor</button>
-        <button id="report-btn" class="btn-report" onclick="fetchReport()">End & Get Report</button>
+        <button id="report-btn" class="btn-report" onclick="fetchReport()">End Session</button>
+        
+        <div id="report-output" style="display:none; margin-top:10px; padding:15px; background:#e9ecef; border-radius:8px;"></div>
     </div>
 
     <div id="state-modal" class="state-modal">
@@ -119,40 +83,118 @@
     <video id="hidden-webcam" autoplay playsinline></video>
     <canvas id="hidden-canvas" style="display:none;"></canvas>
 
-<script>
+    <script>
         const video = document.getElementById('hidden-webcam');
         const canvas = document.getElementById('hidden-canvas');
         const ctx = canvas.getContext('2d');
         let studyInterval = null;
         let liveMonitorInterval = null; 
+        
+        let currentCursorY = 0;
+        document.addEventListener('mousemove', (e) => { 
+            const container = document.getElementById('pdf-container');
+            const rect = container.getBoundingClientRect();
+            // This removes the header offset so we get the EXACT pixel on the PDF
+            currentCursorY = e.clientY - rect.top; 
+        });
+        function updateInstructions() {
+            const mode = document.getElementById('tracking-mode').value;
+            const text = document.getElementById('mode-instruction');
+            if (mode === 'line') {
+                text.innerHTML = "<strong>Important:</strong> Please keep your mouse cursor hovering over the exact line you are reading.";
+                text.style.color = "#d9534f";
+            } else {
+                text.innerHTML = "We will track which general section of the page you are looking at.";
+                text.style.color = "#666";
+            }
+        }
 
-        // 1. Handle PDF Upload
+        // 1. Handle PDF Upload & Send to Server
         document.getElementById('pdf-upload').addEventListener('change', function(e) {
             const file = e.target.files[0];
             if(file && file.type === "application/pdf") {
-                const fileURL = URL.createObjectURL(file);
-                document.getElementById('pdf-frame').src = fileURL;
-                document.getElementById('status-text').innerText = "PDF Loaded. Ready when you are.";
+                
+                document.getElementById('status-text').innerText = "Processing PDF...";
+
+                /// --- NEW: Force Perfect Order Rendering ---
+                const fileReader = new FileReader();
+                fileReader.onload = function() {
+                    const typedarray = new Uint8Array(this.result);
+                    pdfjsLib.getDocument(typedarray).promise.then(pdf => {
+                        const container = document.getElementById('pdf-container');
+                        container.innerHTML = ''; 
+                        
+                        // 1. Create empty placeholder boxes first so the order never breaks
+                        for(let i=1; i<=pdf.numPages; i++) {
+                            const wrap = document.createElement('div');
+                            wrap.id = `page-wrap-${i}`;
+                            wrap.style.width = "100%";
+                            wrap.style.display = "flex";
+                            wrap.style.justifyContent = "center";
+                            container.appendChild(wrap);
+                        }
+                        
+                        // 2. Render the canvases into their designated boxes
+                        for(let i=1; i<=pdf.numPages; i++) {
+                            pdf.getPage(i).then(page => {
+                                const viewport = page.getViewport({scale: 1.5}); 
+                                const canvas = document.createElement('canvas');
+                                const context = canvas.getContext('2d');
+                                canvas.height = viewport.height;
+                                canvas.width = viewport.width;
+                                page.render({canvasContext: context, viewport: viewport});
+                                document.getElementById(`page-wrap-${page.pageNumber}`).appendChild(canvas);
+                            });
+                        }
+                    });
+                };
+                fileReader.readAsArrayBuffer(file);
+                // ---------------------------------------------
+
+                // Send the file to your Flask backend
+                const formData = new FormData();
+                formData.append('file', file);
+
+                fetch('/upload_pdf', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if(data.status === "success") {
+                        document.getElementById('status-text').innerText = "PDF Loaded & Synced. Ready when you are.";
+                    }
+                })
+                .catch(err => console.error("Error uploading PDF:", err));
             }
         });
 
         // 2. Start Studying
         function startStudying() {
-            fetch('/start_session', { method: 'POST' });
+            alert("CALIBRATION REQUIRED:\n\nWhen you click OK, please look directly at your webcam with a neutral, relaxed face for 2 seconds.");
+            
+            const selectedMode = document.getElementById('tracking-mode').value;
+
+            fetch('/start_session', { 
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tracking_mode: selectedMode })
+            });
 
             navigator.mediaDevices.getUserMedia({ video: true })
                 .then(stream => {
                     video.srcObject = stream;
-                    document.getElementById('status-text').innerText = "Session Active. AI Tracking is running in the background.";
+                    document.getElementById('status-text').innerText = "Session Active. Tracking running.";
                     
                     document.getElementById('start-btn').style.display = 'none';
+                    document.getElementById('settings-panel').style.display = 'none';
                     document.getElementById('state-btn').style.display = 'block';
                     document.getElementById('report-btn').style.display = 'block';
 
                     studyInterval = setInterval(sendFrame, 500);
                 })
                 .catch(err => {
-                    alert("Camera access is required to track your study session.");
+                    alert("Camera access is required.");
                 });
         }
 
@@ -165,86 +207,121 @@
                 
                 const imageData = canvas.toDataURL('image/jpeg', 0.5);
 
-                // --- NEW: Calculate Window & Scroll Data ---
-                let currentScrollY = 0;
-                try {
-                    // Try to get the scroll position inside the PDF frame
-                    currentScrollY = document.getElementById('pdf-frame').contentWindow.scrollY || 0;
-                } catch(e) {
-                    // Fallback to main window if the PDF viewer blocks access
-                    currentScrollY = window.scrollY;
-                }
+                // --- CHANGED: Accurately read the scroll from our new div ---
+                const container = document.getElementById('pdf-container');
+                const mode = document.getElementById('tracking-mode').value;
                 
-                const screenW = window.innerWidth;
-                const screenH = window.innerHeight;
-                // -------------------------------------------
+                // If line tracking, use mouse. If general tracking, use the center of your screen view!
+                let targetViewportY = mode === 'line' ? currentCursorY : (container.clientHeight / 2);
+                let absoluteY = targetViewportY + container.scrollTop;
+
+                let activePage = 1;
+                let relativeYPct = 0.0;
+
+                // Find exactly which page you are looking at
+                const wrappers = container.children;
+                for (let i = 0; i < wrappers.length; i++) {
+                    const wrap = wrappers[i];
+                    const top = wrap.offsetTop;
+                    const bottom = top + wrap.offsetHeight;
+                    
+                    if (absoluteY >= top && absoluteY <= bottom) {
+                        activePage = i + 1;
+                        if (wrap.offsetHeight > 0) {
+                            relativeYPct = (absoluteY - top) / wrap.offsetHeight;
+                        }
+                        break;
+                    }
+                }
 
                 fetch('/process_frame', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    // NEW: Added scroll and screen size to the payload
                     body: JSON.stringify({ 
                         image: imageData,
-                        scroll_y: currentScrollY,
-                        screen_w: screenW,
-                        screen_h: screenH
+                        mode: mode,
+                        active_page: activePage,
+                        relative_y_pct: relativeYPct
                     })
                 }).catch(err => console.error(err));
             }
         }
 
-        // 4. Open Live Monitor
         function openStateMonitor() {
-            const modal = document.getElementById('state-modal');
-            modal.style.display = 'block';
-            
+            document.getElementById('state-modal').style.display = 'block';
             updateLiveText();
-            
-            if (!liveMonitorInterval) {
-                liveMonitorInterval = setInterval(updateLiveText, 1000);
-            }
+            if (!liveMonitorInterval) liveMonitorInterval = setInterval(updateLiveText, 1000);
         }
 
-        // 4b. Fetch and update the text
         function updateLiveText() {
             fetch('/get_current_state')
                 .then(response => response.json())
                 .then(data => {
                     document.getElementById('modal-state').innerText = data.state.toUpperCase();
                     document.getElementById('modal-struggle').innerText = data.struggle.toUpperCase();
-                })
-                .catch(err => console.error("Could not fetch state:", err));
+                });
         }
 
-        // 4c. Close the Monitor
         function closeStateMonitor() {
             document.getElementById('state-modal').style.display = 'none';
             clearInterval(liveMonitorInterval);
             liveMonitorInterval = null; 
         }
 
-        // 5. Get Report
+        // 5. Get Report and Show Custom UI
         function fetchReport() {
             clearInterval(studyInterval);
             if (liveMonitorInterval) clearInterval(liveMonitorInterval);
             
+            document.getElementById('status-text').innerText = "Compiling your custom report...";
+            document.getElementById('report-btn').style.display = 'none';
+            document.getElementById('state-btn').style.display = 'none';
+            
             fetch('/get_report')
                 .then(response => response.json())
                 .then(data => {
-                    // --- NEW: Format the hardest sections for the alert box ---
-                    let reportMessage = `🏁 SESSION COMPLETE 🏁\n\nEfficiency: ${data.efficiency}%\nTotal Time: ${data.total_time_minutes} mins\n\n`;
+                    
+                    // --- CHANGED: No more alert box! Creating a smooth Report UI ---
+                    const reportDiv = document.getElementById('report-output');
+                    reportDiv.style.display = 'block';
+                    document.getElementById('status-text').innerText = "Session Complete!";
+                    
+                    let htmlContent = `<h3 style="margin-top:0; color:#333;">Session Summary</h3>`;
+                    htmlContent += `<p><strong>Efficiency:</strong> ${data.efficiency}%</p>`;
+                    htmlContent += `<p><strong>Total Time:</strong> ${data.total_time_minutes} mins</p>`;
                     
                     if (data.hardest_sections && data.hardest_sections.length > 0) {
-                        reportMessage += `⚠️ HARDEST SECTIONS IDENTIFIED:\n`;
+                        htmlContent += `<p style="color:#d9534f;"><strong>⚠️ Hardest Sections:</strong></p><ul>`;
                         data.hardest_sections.forEach(section => {
-                            reportMessage += `- Est. Page ${section.estimated_page} (Line ${section.document_pixel_y}) : Struggled for ${section.duration_seconds}s\n`;
+                            htmlContent += `<li>Est. Page ${section.estimated_page} (${section.duration_seconds}s)</li>`;
                         });
+                        htmlContent += `</ul>`;
                     } else {
-                        reportMessage += `✅ No major struggle areas detected! Great focus.`;
+                        htmlContent += `<p style="color:#28a745;">✅ No major struggle areas detected!</p>`;
+                    }
+
+                    // Add the manual download button instead of forcing it
+                    // Add the manual download button with the requested legend!
+                    if (data.report_pdf_url) {
+                        htmlContent += `<hr style="border:0; border-top:1px solid #ccc; margin: 15px 0;">`;
+                        
+                        // NEW: Color Legend
+                        htmlContent += `
+                        <div style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; margin-bottom:15px; text-align:left;">
+                            <strong style="color:#333;">PDF Highlight Legend:</strong>
+                            <ul style="margin: 8px 0 0 0; padding-left: 20px; font-size: 14px; color: #555;">
+                                <li><span style="color: #dc3545; font-weight: bold;">Red Page:</span> High Distraction (Over 30 seconds)</li>
+                                <li><span style="color: #28a745; font-weight: bold;">Green Page:</span> Top 5 Most Focused Pages</li>
+                                <li><span style="color: #007bff; font-weight: bold;">Blue Border:</span> Most Revisited Page</li>
+                            </ul>
+                        </div>`;
+                        
+                        htmlContent += `<a href="${data.report_pdf_url}" target="_blank" class="btn-download">📥 Download Highlighted PDF</a>`;
                     }
                     
-                    alert(reportMessage);
-                    window.location.reload(); 
+                    htmlContent += `<br><button onclick="window.location.reload()" style="width:100%; padding:10px; background:#6c757d; color:white;">Start New Session</button>`;
+
+                    reportDiv.innerHTML = htmlContent;
                 });
         }
     </script>
