@@ -2,44 +2,189 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>StudyBuddy Web</title>
+    <title>StudyBuddy Web Pro</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
     <script>
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
     </script>
     
     <style>
-        body { font-family: Arial, sans-serif; background-color: #f4f4f9; margin: 0; display: flex; height: 100vh; overflow: hidden; }
-        .pdf-section { flex: 3; border-right: 2px solid #ccc; display: flex; flex-direction: column; }
-        .pdf-header { padding: 15px; background: #fff; border-bottom: 1px solid #ddd; display: flex; gap: 15px; align-items: center; }
-        
-        /* NEW: Our custom scrollable container instead of an iframe */
-        #pdf-container { flex-grow: 1; width: 100%; overflow-y: auto; background: #ebebeb; display: flex; flex-direction: column; align-items: center; padding-top: 20px; gap: 15px; }
-        #pdf-container canvas { box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
-        
-        .sidebar { flex: 1; background: #fff; padding: 20px; display: flex; flex-direction: column; gap: 15px; box-shadow: -2px 0 5px rgba(0,0,0,0.05); overflow-y: auto;}
-        
-        button { padding: 15px; font-size: 16px; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; transition: 0.2s; }
-        .btn-start { background: #28a745; color: white; }
-        .btn-start:hover { background: #218838; }
-        .btn-state { background: #17a2b8; color: white; display: none; }
-        .btn-state:hover { background: #138496; }
-        .btn-report { background: #dc3545; color: white; display: none; }
-        .btn-report:hover { background: #c82333; }
-        
-        /* NEW: Download Button Styling */
-        .btn-download { background: #6f42c1; color: white; text-decoration: none; text-align: center; display: block; padding: 15px; font-size: 16px; font-weight: bold; border-radius: 8px; margin-top: 10px;}
-        .btn-download:hover { background: #59339d; }
+        /* Modern Dark Theme Variables */
+        :root {
+            --bg-main: #121212;
+            --bg-panel: #1e1e1e;
+            --bg-card: #2d2d2d;
+            --text-main: #e0e0e0;
+            --text-muted: #a0a0a0;
+            --border-color: #333;
+            --accent-green: #10b981;
+            --accent-green-hover: #059669;
+            --accent-blue: #3b82f6;
+            --accent-blue-hover: #2563eb;
+            --accent-red: #ef4444;
+            --accent-red-hover: #dc2626;
+            --accent-purple: #8b5cf6;
+            --accent-purple-hover: #7c3aed;
+        }
 
-        .state-modal { display: none; position: absolute; top: 20px; right: 25vw; background: rgba(0, 0, 0, 0.85); color: white; padding: 20px 40px; border-radius: 12px; z-index: 1000; text-align: center; }
-        .state-modal h2 { margin: 0 0 10px 0; color: #4facfe; }
-        .close-btn { position: absolute; top: 10px; right: 15px; color: #aaa; font-size: 24px; cursor: pointer; }
+        body { 
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; 
+            background-color: var(--bg-main); 
+            color: var(--text-main);
+            margin: 0; 
+            display: flex; 
+            height: 100vh; 
+            overflow: hidden; 
+        }
+
+        /* Custom Dark Scrollbar */
+        ::-webkit-scrollbar { width: 10px; }
+        ::-webkit-scrollbar-track { background: var(--bg-main); }
+        ::-webkit-scrollbar-thumb { background: #444; border-radius: 5px; }
+        ::-webkit-scrollbar-thumb:hover { background: #666; }
+
+        .pdf-section { 
+            flex: 3; 
+            border-right: 1px solid var(--border-color); 
+            display: flex; 
+            flex-direction: column; 
+        }
+
+        .pdf-header { 
+            padding: 15px 25px; 
+            background: var(--bg-panel); 
+            border-bottom: 1px solid var(--border-color); 
+            display: flex; 
+            justify-content: flex-start; /* Moved button to the top left */
+            align-items: center; 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            z-index: 10;
+        }
+        
+        /* Premium File Upload Button */
+        .custom-file-upload {
+            display: inline-block;
+            padding: 12px 24px;
+            cursor: pointer;
+            background: var(--accent-blue);
+            color: white;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 15px;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+        }
+        .custom-file-upload:hover { 
+            background: var(--accent-blue-hover); 
+            transform: translateY(-1px);
+        }
+        input[type="file"] { display: none; }
+        
+        #pdf-container { 
+            flex-grow: 1; 
+            width: 100%; 
+            overflow-y: auto; 
+            background: #1a1a1a; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            padding-top: 30px; 
+            padding-bottom: 50px;
+            gap: 25px; 
+        }
+        #pdf-container canvas { 
+            box-shadow: 0 8px 16px rgba(0,0,0,0.5); 
+            border-radius: 4px;
+        }
+        
+        .sidebar { 
+            flex: 1; 
+            background: var(--bg-panel); 
+            padding: 30px 25px; 
+            display: flex; 
+            flex-direction: column; 
+            gap: 20px; 
+            box-shadow: -5px 0 15px rgba(0,0,0,0.2); 
+            overflow-y: auto;
+            z-index: 5;
+        }
+        
+        /* NEW: Brand Header Layout */
+        .brand-header {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .brand-logo {
+            width: 42px; /* Perfect size for the sidebar */
+            height: auto;
+            border-radius: 8px; /* Rounds the corners slightly */
+        }
+        .brand-header h2 { margin: 0; color: #ffffff; font-size: 24px; letter-spacing: 0.5px;}
+        
+        button { 
+            padding: 15px; 
+            font-size: 16px; 
+            font-weight: 600; 
+            border: none; 
+            border-radius: 8px; 
+            cursor: pointer; 
+            transition: all 0.2s ease; 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+        }
+        button:hover { transform: translateY(-1px); }
+        button:active { transform: translateY(1px); }
+
+        .btn-start { background: var(--accent-green); color: white; }
+        .btn-start:hover { background: var(--accent-green-hover); }
+        .btn-state { background: #0ea5e9; color: white; display: none; }
+        .btn-state:hover { background: #0284c7; }
+        .btn-report { background: var(--accent-red); color: white; display: none; }
+        .btn-report:hover { background: var(--accent-red-hover); }
+        
+        .btn-download { 
+            background: var(--accent-purple); 
+            color: white; 
+            text-decoration: none; 
+            text-align: center; 
+            display: block; 
+            padding: 15px; 
+            font-size: 16px; 
+            font-weight: bold; 
+            border-radius: 8px; 
+            margin-top: 15px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+            transition: all 0.2s;
+        }
+        .btn-download:hover { background: var(--accent-purple-hover); transform: translateY(-1px); }
+
+        .state-modal { display: none; position: absolute; top: 20px; right: 25vw; background: rgba(20, 20, 20, 0.95); color: white; padding: 20px 40px; border-radius: 12px; z-index: 1000; text-align: center; border: 1px solid #444; box-shadow: 0 10px 25px rgba(0,0,0,0.5); backdrop-filter: blur(5px);}
+        .state-modal h2 { margin: 0 0 10px 0; color: #38bdf8; }
+        .close-btn { position: absolute; top: 10px; right: 15px; color: #888; font-size: 24px; cursor: pointer; transition: 0.2s;}
         .close-btn:hover { color: #fff; }
         
-        .settings-box { background: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #ddd; }
-        .settings-box select { width: 100%; padding: 8px; margin-top: 5px; border-radius: 4px; border: 1px solid #ccc;}
-        .instruction-text { font-size: 13px; color: #666; margin-top: 5px; font-style: italic; }
+        .settings-box { background: var(--bg-card); padding: 20px; border-radius: 10px; border: 1px solid var(--border-color); }
+        .settings-box label { display: block; margin-bottom: 8px; color: #ddd; }
+        .settings-box select { 
+            width: 100%; 
+            padding: 10px; 
+            background: var(--bg-main);
+            color: white;
+            border-radius: 6px; 
+            border: 1px solid #555;
+            font-size: 14px;
+            outline: none;
+        }
+        .settings-box select:focus { border-color: var(--accent-blue); }
+        .instruction-text { font-size: 13px; color: var(--text-muted); margin-top: 10px; font-style: italic; line-height: 1.4;}
         
+        #status-text { font-size: 15px; color: #bbb; text-align: center; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 6px;}
+
+        /* Enhanced Report Output Styles applied via JS */
+        .report-dashboard { background: var(--bg-card) !important; color: #fff; border: 1px solid var(--border-color); box-shadow: 0 10px 20px rgba(0,0,0,0.2); }
+        .report-legend { background: var(--bg-main) !important; border: 1px solid #444 !important; }
+        .report-legend span { filter: brightness(1.2); }
+
         #hidden-webcam { display: none; }
     </style>
 </head>
@@ -47,37 +192,43 @@
 
     <div class="pdf-section">
         <div class="pdf-header">
+            <label for="pdf-upload" class="custom-file-upload">
+                📁 Select PDF Document
+            </label>
             <input type="file" id="pdf-upload" accept="application/pdf">
         </div>
         <div id="pdf-container"></div> 
     </div>
 
     <div class="sidebar" id="sidebar-content">
-        <h2 style="margin-top:0;">StudyBuddy</h2>
+        <div class="brand-header">
+            <img src="logo.png" alt="StudyBuddy Logo" class="brand-logo" onerror="this.style.display='none'">
+            <h2>StudyBuddy</h2>
+        </div>
         
         <div class="settings-box" id="settings-panel">
-            <label><strong>Tracking Mode:</strong></label>
+            <label><strong>Tracking Mode</strong></label>
             <select id="tracking-mode" onchange="updateInstructions()">
-                <option value="page">General Page (Eye Tracking)</option>
-                <option value="line">Exact Line (Cursor Tracking)</option>
+                <option value="page"> General Page (Eye Tracking)</option>
+                <option value="line"> Exact Line (Cursor Tracking)</option>
             </select>
             <p class="instruction-text" id="mode-instruction">We will track which general section of the page you are looking at.</p>
         </div>
 
         <p id="status-text">Upload a PDF to begin.</p>
         
-        <button id="start-btn" class="btn-start" onclick="startStudying()">Start Studying</button>
-        <button id="state-btn" class="btn-state" onclick="openStateMonitor()">Open Live Monitor</button>
-        <button id="report-btn" class="btn-report" onclick="fetchReport()">End Session</button>
+        <button id="start-btn" class="btn-start" onclick="startStudying()"> Start Session</button>
+        <button id="state-btn" class="btn-state" onclick="openStateMonitor()"> Live Monitor</button>
+        <button id="report-btn" class="btn-report" onclick="fetchReport()">🛑 End Session & Get Report</button>
         
-        <div id="report-output" style="display:none; margin-top:10px; padding:15px; background:#e9ecef; border-radius:8px;"></div>
+        <div id="report-output" style="display:none; margin-top:10px; padding:20px; border-radius:10px; transition: 0.3s;" class="report-dashboard"></div>
     </div>
 
     <div id="state-modal" class="state-modal">
         <span class="close-btn" onclick="closeStateMonitor()">&times;</span>
         <h2>Live Feed</h2>
-        <p>State: <strong id="modal-state">...</strong></p>
-        <p>Struggle: <strong id="modal-struggle">...</strong></p>
+        <p style="margin: 8px 0; font-size: 18px;">State: <strong id="modal-state" style="color:#fff;">...</strong></p>
+        <p style="margin: 8px 0; font-size: 18px;">Struggle: <strong id="modal-struggle" style="color:#ef4444;">...</strong></p>
     </div>
 
     <video id="hidden-webcam" autoplay playsinline></video>
@@ -94,29 +245,25 @@
         document.addEventListener('mousemove', (e) => { 
             const container = document.getElementById('pdf-container');
             const rect = container.getBoundingClientRect();
-            // This removes the header offset so we get the EXACT pixel on the PDF
             currentCursorY = e.clientY - rect.top; 
         });
+
         function updateInstructions() {
             const mode = document.getElementById('tracking-mode').value;
             const text = document.getElementById('mode-instruction');
             if (mode === 'line') {
-                text.innerHTML = "<strong>Important:</strong> Please keep your mouse cursor hovering over the exact line you are reading.";
-                text.style.color = "#d9534f";
+                text.innerHTML = "<strong style='color:#ef4444;'>Important:</strong> Please keep your mouse cursor hovering over the exact line you are reading.";
             } else {
                 text.innerHTML = "We will track which general section of the page you are looking at.";
-                text.style.color = "#666";
             }
         }
 
-        // 1. Handle PDF Upload & Send to Server
         document.getElementById('pdf-upload').addEventListener('change', function(e) {
             const file = e.target.files[0];
             if(file && file.type === "application/pdf") {
                 
-                document.getElementById('status-text').innerText = "Processing PDF...";
+                document.getElementById('status-text').innerHTML = " Processing PDF...";
 
-                /// --- NEW: Force Perfect Order Rendering ---
                 const fileReader = new FileReader();
                 fileReader.onload = function() {
                     const typedarray = new Uint8Array(this.result);
@@ -124,7 +271,6 @@
                         const container = document.getElementById('pdf-container');
                         container.innerHTML = ''; 
                         
-                        // 1. Create empty placeholder boxes first so the order never breaks
                         for(let i=1; i<=pdf.numPages; i++) {
                             const wrap = document.createElement('div');
                             wrap.id = `page-wrap-${i}`;
@@ -134,7 +280,6 @@
                             container.appendChild(wrap);
                         }
                         
-                        // 2. Render the canvases into their designated boxes
                         for(let i=1; i<=pdf.numPages; i++) {
                             pdf.getPage(i).then(page => {
                                 const viewport = page.getViewport({scale: 1.5}); 
@@ -149,9 +294,7 @@
                     });
                 };
                 fileReader.readAsArrayBuffer(file);
-                // ---------------------------------------------
 
-                // Send the file to your Flask backend
                 const formData = new FormData();
                 formData.append('file', file);
 
@@ -162,14 +305,13 @@
                 .then(response => response.json())
                 .then(data => {
                     if(data.status === "success") {
-                        document.getElementById('status-text').innerText = "PDF Loaded & Synced. Ready when you are.";
+                        document.getElementById('status-text').innerHTML = " PDF Loaded & Synced. Ready when you are.";
                     }
                 })
                 .catch(err => console.error("Error uploading PDF:", err));
             }
         });
 
-        // 2. Start Studying
         function startStudying() {
             alert("CALIBRATION REQUIRED:\n\nWhen you click OK, please look directly at your webcam with a neutral, relaxed face for 2 seconds.");
             
@@ -184,7 +326,8 @@
             navigator.mediaDevices.getUserMedia({ video: true })
                 .then(stream => {
                     video.srcObject = stream;
-                    document.getElementById('status-text').innerText = "Session Active. Tracking running.";
+                    document.getElementById('status-text').innerHTML = "🟢 Session Active. Tracking running.";
+                    document.getElementById('status-text').style.color = "#10b981";
                     
                     document.getElementById('start-btn').style.display = 'none';
                     document.getElementById('settings-panel').style.display = 'none';
@@ -198,7 +341,6 @@
                 });
         }
 
-        // 3. Send frames silently
         function sendFrame() {
             if (video.readyState === video.HAVE_ENOUGH_DATA) {
                 canvas.width = video.videoWidth;
@@ -207,18 +349,15 @@
                 
                 const imageData = canvas.toDataURL('image/jpeg', 0.5);
 
-                // --- CHANGED: Accurately read the scroll from our new div ---
                 const container = document.getElementById('pdf-container');
                 const mode = document.getElementById('tracking-mode').value;
                 
-                // If line tracking, use mouse. If general tracking, use the center of your screen view!
                 let targetViewportY = mode === 'line' ? currentCursorY : (container.clientHeight / 2);
                 let absoluteY = targetViewportY + container.scrollTop;
 
                 let activePage = 1;
                 let relativeYPct = 0.0;
 
-                // Find exactly which page you are looking at
                 const wrappers = container.children;
                 for (let i = 0; i < wrappers.length; i++) {
                     const wrap = wrappers[i];
@@ -268,12 +407,12 @@
             liveMonitorInterval = null; 
         }
 
-        // 5. Get Report and Show Custom UI
         function fetchReport() {
             clearInterval(studyInterval);
             if (liveMonitorInterval) clearInterval(liveMonitorInterval);
             
-            document.getElementById('status-text').innerText = "Compiling your custom report...";
+            document.getElementById('status-text').innerHTML = "⚙️ Compiling your custom report...";
+            document.getElementById('status-text').style.color = "#bbb";
             document.getElementById('report-btn').style.display = 'none';
             document.getElementById('state-btn').style.display = 'none';
             
@@ -281,45 +420,53 @@
                 .then(response => response.json())
                 .then(data => {
                     
-                    // --- CHANGED: No more alert box! Creating a smooth Report UI ---
                     const reportDiv = document.getElementById('report-output');
                     reportDiv.style.display = 'block';
-                    document.getElementById('status-text').innerText = "Session Complete!";
+                    document.getElementById('status-text').innerHTML = "✨ Session Complete!";
+                    document.getElementById('status-text').style.color = "#3b82f6";
                     
-                    let htmlContent = `<h3 style="margin-top:0; color:#333;">Session Summary</h3>`;
-                    htmlContent += `<p><strong>Efficiency:</strong> ${data.efficiency}%</p>`;
-                    htmlContent += `<p><strong>Total Time:</strong> ${data.total_time_minutes} mins</p>`;
+                    let htmlContent = `<h3 style="margin-top:0; color:#fff; border-bottom: 1px solid #444; padding-bottom: 10px;">📊 Session Summary</h3>`;
+                    
+                    htmlContent += `<div style="display:flex; justify-content:space-between; margin-bottom: 15px;">`;
+                    htmlContent += `<div><span style="color:#a0a0a0; font-size:13px;">Efficiency</span><br><strong style="font-size:20px; color:#10b981;">${data.efficiency}%</strong></div>`;
+                    htmlContent += `<div><span style="color:#a0a0a0; font-size:13px;">Total Time</span><br><strong style="font-size:20px; color:#3b82f6;">${data.total_time_minutes}m</strong></div>`;
+                    htmlContent += `</div>`;
                     
                     if (data.hardest_sections && data.hardest_sections.length > 0) {
-                        htmlContent += `<p style="color:#d9534f;"><strong>⚠️ Hardest Sections:</strong></p><ul>`;
+                        htmlContent += `<p style="color:#ef4444; margin-bottom:5px;"><strong>⚠️ Hardest Sections:</strong></p><ul style="color:#ddd; margin-top:5px; padding-left: 20px;">`;
                         data.hardest_sections.forEach(section => {
                             htmlContent += `<li>Est. Page ${section.estimated_page} (${section.duration_seconds}s)</li>`;
                         });
                         htmlContent += `</ul>`;
                     } else {
-                        htmlContent += `<p style="color:#28a745;">✅ No major struggle areas detected!</p>`;
+                        htmlContent += `<p style="color:#10b981; background: rgba(16, 185, 129, 0.1); padding: 10px; border-radius: 6px;">✅ No major struggle areas detected!</p>`;
                     }
 
-                    // Add the manual download button instead of forcing it
-                    // Add the manual download button with the requested legend!
                     if (data.report_pdf_url) {
-                        htmlContent += `<hr style="border:0; border-top:1px solid #ccc; margin: 15px 0;">`;
+                        htmlContent += `<hr style="border:0; border-top:1px solid #444; margin: 20px 0;">`;
                         
-                        // NEW: Color Legend
                         htmlContent += `
-                        <div style="background:#fff; padding:15px; border-radius:8px; border:1px solid #ddd; margin-bottom:15px; text-align:left;">
-                            <strong style="color:#333;">PDF Highlight Legend:</strong>
-                            <ul style="margin: 8px 0 0 0; padding-left: 20px; font-size: 14px; color: #555;">
-                                <li><span style="color: #dc3545; font-weight: bold;">Red Page:</span> High Distraction (Over 30 seconds)</li>
-                                <li><span style="color: #28a745; font-weight: bold;">Green Page:</span> Top 5 Most Focused Pages</li>
-                                <li><span style="color: #007bff; font-weight: bold;">Blue Border:</span> Most Revisited Page</li>
+                        <div class="report-legend" style="padding:15px; border-radius:8px; margin-bottom:20px; text-align:left;">
+                            <strong style="color:#e0e0e0; font-size: 15px;">PDF Highlight Legend:</strong>
+                            <ul style="margin: 10px 0 0 0; padding-left: 20px; font-size: 14px; color: #bbb; line-height: 1.6;">`;
+                                
+                        if (data.mode === 'line') {
+                            htmlContent += `<li><span style="color: #ef4444; font-weight: bold;">Red Section:</span> Distracted Reading Lines</li>`;
+                            htmlContent += `<li><span style="color: #10b981; font-weight: bold;">Green Section:</span> Top 5 Most Focused Lines</li>`;
+                        } else {
+                            htmlContent += `<li><span style="color: #ef4444; font-weight: bold;">Red Page:</span> High Distraction (> 30s)</li>`;
+                            htmlContent += `<li><span style="color: #10b981; font-weight: bold;">Green Page:</span> Top 5 Most Focused Pages</li>`;
+                            htmlContent += `<li><span style="color: #3b82f6; font-weight: bold;">Blue Border:</span> Most Revisited Page</li>`;
+                        }
+
+                        htmlContent += `
                             </ul>
                         </div>`;
                         
                         htmlContent += `<a href="${data.report_pdf_url}" target="_blank" class="btn-download">📥 Download Highlighted PDF</a>`;
                     }
                     
-                    htmlContent += `<br><button onclick="window.location.reload()" style="width:100%; padding:10px; background:#6c757d; color:white;">Start New Session</button>`;
+                    htmlContent += `<br><button onclick="window.location.reload()" style="width:100%; padding:12px; background:#444; color:white; border: 1px solid #555; margin-top: 10px;">Start New Session</button>`;
 
                     reportDiv.innerHTML = htmlContent;
                 });
